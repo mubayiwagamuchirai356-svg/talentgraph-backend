@@ -76,3 +76,7 @@ app.get('/api/talent/search', (req, res) => {
 
 const PORT = 5000;
 app.listen(PORT, () => console.log(`🚀 Advanced Infrastructure Engine active on port ${PORT}`));
+// Live Status Gateway for Render health checks
+app.get('/', (req, res) => {
+  res.json({ status: "online", system: "Kwancho Core API Active" });
+});
