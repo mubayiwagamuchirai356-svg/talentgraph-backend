@@ -4,13 +4,7 @@ const axios = require('axios');
 
 const app = express();
 app.use(express.json());
-
-// Enforce comprehensive CORS allowance so Vercel never gets blocked
-app.use(cors({
-  origin: '*',
-  methods: ['GET', 'POST'],
-  allowedHeaders: ['Content-Type']
-}));
+app.use(cors()); // Allows your Vercel frontend to connect smoothly
 
 // In-memory key-value store using GitHub username as unique key to prevent duplicates
 let talentPool = {};
@@ -24,37 +18,33 @@ app.post('/api/talent/register', async (req, res) => {
     const { name, email, city, country, lat, lng, githubUsername, skills } = req.body;
     const cleanUsername = githubUsername.trim().toLowerCase();
 
-    // 1. Fetch live telemetry metrics from public GitHub API
+    // Default placeholder metrics in case GitHub API fails or blocks us
     let publicRepos = 0;
-    let topLanguages = [];
+    let topLanguages = ["HTML/CSS"];
 
+    // Wrap GitHub API calls in a safety net to prevent server crashes
     try {
-      const githubRes = await axios.get(`https://api.github.com/users/${cleanUsername}`, {
+      const githubResponse = await axios.get(`https://api.github.com/users/${cleanUsername}`, {
         headers: { 'User-Agent': 'Kwancho-Talent-App' }
       });
-      publicRepos = githubRes.data.public_repos || 0;
-      
-      // Fetch user repos to isolate top core technologies
-      const reposRes = await axios.get(`https://api.github.com/users/${cleanUsername}/repos?per_page=5&sort=updated`, {
+      publicRepos = githubResponse.data.public_repos || 0;
+
+      const reposData = await axios.get(`https://api.github.com/users/${cleanUsername}/repos`, {
         headers: { 'User-Agent': 'Kwancho-Talent-App' }
       });
       
-      if (Array.isArray(reposRes.data)) {
-        const langs = reposRes.data
-          .map(repo => repo.language)
-          .filter(lang => lang !== null);
-        topLanguages = [...new Set(langs)];
+      if (Array.isArray(reposData.data)) {
+        // Complete the logic that got cut off, filtering out null/empty languages safely
+        topLanguages = [...new Set(reposData.data.map(repo => repo.language).filter(Boolean))];
       }
-    } catch (gitErr) {
-      console.warn(`GitHub metrics fetch skipped/failed for user ${cleanUsername}:`, gitErr.message);
-      // Fallback defaults if user doesn't exist or API hits rate limits
-      publicRepos = 0;
-      topLanguages = ["Vanilla Stack"];
+    } catch (gitError) {
+      console.warn(`[WARNING] GitHub data fetch bypassed for ${cleanUsername}:`, gitError.message);
+      // Keeps going even if GitHub is angry at our IP address
     }
 
-    // 2. Aggregate form data with computed GitHub telemetry metrics
+    // Combine everything into a single passport record
     const newPassport = {
-      _id: cleanUsername, // In-memory unique key representation
+      _id: cleanUsername + Date.now(), // Generate a unique ID fallback string
       name,
       email,
       location: { city, country, lat: parseFloat(lat), lng: parseFloat(lng) },
@@ -62,19 +52,19 @@ app.post('/api/talent/register', async (req, res) => {
       skills: Array.isArray(skills) ? skills : skills.split(',').map(s => s.trim()),
       metrics: {
         publicRepos,
-        topLanguages: topLanguages.length > 0 ? topLanguages : ["Vanilla Stack"]
+        topLanguages: topLanguages.length > 0 ? topLanguages : ["Vanilla stack"]
       }
     };
 
-    // 3. Save directly into memory store 
+    // Save into our storage dictionary
     talentPool[cleanUsername] = newPassport;
 
-    // 4. Return success back to front-end
-    return res.status(201).json({ success: true, message: "Profile minted successfully!", data: newPassport });
+    // Send success confirmation back to React frontend
+    return res.status(201).json({ success: true, message: "Passport minted!", data: newPassport });
 
   } catch (err) {
-    console.error("Critical error in registration system:", err);
-    return res.status(500).json({ error: "Internal Server Processing Failure" });
+    console.error("Critical registration endpoint error:", err);
+    return res.status(500).json({ error: "Internal processing error" });
   }
 });
 
@@ -86,7 +76,7 @@ app.get('/api/talent', (req, res) => {
   return res.json(Object.values(talentPool));
 });
 
-// System Status landing root check for Render health routing
+// System Status landing root check for Render health monitoring
 app.get('/', (req, res) => {
   res.json({ status: "online", system: "Kwancho Core API Active" });
 });
